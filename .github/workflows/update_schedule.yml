@@ -1,38 +1,46 @@
-name: Update All Schedules (every 30min)
+name: 🕒 Update Schedule (every 30 min)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # каждые 30 минут
-  workflow_dispatch:
+    - cron: "*/30 * * * *"   # каждые 30 минут
+  workflow_dispatch:          # возможность вручную запустить
 
 jobs:
   update:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout repository
+      - name: 📥 Checkout repo
         uses: actions/checkout@v4
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: 💿 Install dependencies
+      - name: ⚙️ Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4
+          pip install selenium
 
-      - name: 🧠 Run schedule parser for all groups
-        run: python parse_all_schedules.py
+      - name: 🧩 Install Chrome and Chromedriver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          LATEST=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE)
+          wget -q "https://chromedriver.storage.googleapis.com/${LATEST}/chromedriver_linux64.zip"
+          unzip chromedriver_linux64.zip
+          sudo mv chromedriver /usr/local/bin/
+          rm chromedriver_linux64.zip
 
-      - name: 💾 Commit and push changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🧠 Run schedule parser
+        run: python parse_schedule_selenium.py
+
+      - name: 💾 Commit & Push results
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add schedule.json
-          git commit -m "Auto update: all schedules" || echo "No changes"
           git pull --rebase origin main || true
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+          git add schedule.json
+          git commit -m "🔄 Update schedule.json (auto)" || echo "No changes"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} main
