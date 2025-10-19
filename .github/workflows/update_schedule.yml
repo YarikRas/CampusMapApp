@@ -36,8 +36,8 @@ jobs:
           # Качаем JSON с known-good-versions
           curl -s https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json > versions.json
           
-          # Находим последнюю stable версию chromedriver для major (с tail -1 для latest)
-          CHROMEDRIVER_VERSION=$(jq -r --arg major "$CHROME_MAJOR" '.versions[] | select(.version | startswith($major) and .channels.stable != null) | .version' versions.json | tail -1)
+          # Находим последнюю версию chromedriver для major (убрали channels, так как его нет)
+          CHROMEDRIVER_VERSION=$(jq -r --arg major "$CHROME_MAJOR" '.versions[] | select(.version | startswith($major + ".")) | .version' versions.json | tail -1)
           if [ -z "$CHROMEDRIVER_VERSION" ]; then
             echo "❌ No matching chromedriver for major $CHROME_MAJOR"
             exit 1
