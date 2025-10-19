@@ -23,15 +23,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install selenium
 
-      - name: 🧩 Install Chrome and Chromedriver
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          LATEST=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE)
-          wget -q "https://chromedriver.storage.googleapis.com/${LATEST}/chromedriver_linux64.zip"
-          unzip chromedriver_linux64.zip
-          sudo mv chromedriver /usr/local/bin/
-          rm chromedriver_linux64.zip
+      - name: 🧩 Setup Chrome and Chromedriver
+        uses: nanasess/setup-chromedriver@v2  # Или browser-actions/setup-chrome@v1
+        with:
+          chromedriver-version: stable  # Авто-match с Chrome
+
+      - name: 🔧 Update PATH
+        run: echo "/opt/hostedtoolcache/chromedriver/stable/x64" >> $GITHUB_PATH
 
       - name: 🧠 Run schedule parser
         run: python parse_all_schedules.py
