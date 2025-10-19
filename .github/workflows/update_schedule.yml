@@ -34,7 +34,7 @@ jobs:
           rm chromedriver_linux64.zip
 
       - name: 🧠 Run schedule parser
-        run: python parse_schedule_selenium.py
+        run: python parse_all_schedules.py
 
       - name: 💾 Commit & Push results
         run: |
