@@ -26,28 +26,32 @@ jobs:
       - name: 🧩 Install Chrome and Chromedriver
         run: |
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y google-chrome-stable wget unzip jq
           
-          # Получаем major-версию Chrome (e.g., 141)
-          CHROME_MAJOR=$(google-chrome --version | cut -d ' ' -f3 | cut -d '.' -f1)
-          echo "Chrome major version: $CHROME_MAJOR"
+          # Получаем версию Chrome
+          CHROME_VERSION=$(google-chrome --version | cut -d ' ' -f3)
+          CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d '.' -f1)
+          echo "Detected Chrome: $CHROME_VERSION (major: $CHROME_MAJOR)"
           
-          # Скачиваем matching chromedriver (LATEST_RELEASE_{major})
-          CHROMEDRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_MAJOR}/linux64/chromedriver-linux64.zip"
-          wait, подожди — в 2023+ Google переехал на chrome-for-testing-public (старый chromedriver.storage устарел для новых версий).
+          # Качаем JSON с known-good-versions
+          curl -s https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json > versions.json
           
-          # Правильный способ для 2025 (chrome-for-testing):
-          CHROME_VERSION=$(google-chrome --version | sed -E 's/.* ([0-9]+)(\.[0-9]+){3}.*/\1.\2.\3.\4/' | cut -d. -f1-3)  # e.g., 141.0.7390
-          echo "Full Chrome version: $CHROME_VERSION"
+          # Находим последнюю stable версию chromedriver для major (с tail -1 для latest)
+          CHROMEDRIVER_VERSION=$(jq -r --arg major "$CHROME_MAJOR" '.versions[] | select(.version | startswith($major) and .channels.stable != null) | .version' versions.json | tail -1)
+          if [ -z "$CHROMEDRIVER_VERSION" ]; then
+            echo "❌ No matching chromedriver for major $CHROME_MAJOR"
+            exit 1
+          fi
+          echo "Selected Chromedriver: $CHROMEDRIVER_VERSION"
           
-          # Скачиваем chromedriver для exact версии (или closest)
-          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
-          unzip chromedriver-linux64.zip
+          # Скачиваем и устанавливаем
+          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip"
+          unzip -q chromedriver-linux64.zip
           sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
           sudo chmod +x /usr/local/bin/chromedriver
-          rm -rf chromedriver-linux64.zip chromedriver-linux64
+          rm -rf chromedriver-linux64* versions.json
           
-          # Проверяем версии
+          # Проверяем версии (должны совпадать по major)
           chromedriver --version
           google-chrome --version
 
