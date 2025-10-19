@@ -5,8 +5,7 @@ import json
 # === Настройки ===
 API_BASE = "https://api.nntu.ru"
 DEPARTMENT_ID = 1  # Очная форма
-GROUP_NAME = "АСИ 25-1"  # можно поменять под любую группу
-#GROUP_NAME = "МА 25ПМ"  # можно поменять под любую группу
+GROUP_NAME = "МА 25ПМ"  # можно поменять под любую группу
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
