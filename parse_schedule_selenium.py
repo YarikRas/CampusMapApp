@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
 URL = "https://api.nntu.ru/raspisanie"
-GROUP_NAME = "АСИ 25-1"
+GROUP_NAME = "МА 25ПМ"
 OUTPUT_FILE = "schedule.json"
 
 
