@@ -23,19 +23,20 @@ def get_groups():
 # === 2. Находим ID нужной группы ===
 def find_group_id(groups, group_name):
     for g in groups:
-        if g.get("name") == group_name:
+        # На всякий случай приводим к одному регистру
+        if g.get("name", "").strip().lower() == group_name.strip().lower():
             return g.get("id") or g.get("group_id")
     raise ValueError(f"Группа '{group_name}' не найдена")
 
-# === 3. Получаем расписание ===
+# === 3. Получаем HTML расписания ===
 def get_schedule(group_id):
     url = f"{API_BASE}/getschedule"
     data = {
         "department_id": DEPARTMENT_ID,
         "group_id": group_id,
         "type": 1,
-        "date_from": "null",
-        "date_to": "null"
+        "date_from": None,
+        "date_to": None
     }
     resp = requests.post(url, data=data, headers=HEADERS)
     resp.raise_for_status()
@@ -46,13 +47,15 @@ def parse_schedule(html):
     soup = BeautifulSoup(html, "html.parser")
     schedule = {}
 
+    # Обычно дни — это <h3> с названием дня
     for day_header in soup.find_all(["h3", "h2"]):
         day_name = day_header.get_text(strip=True)
         table = day_header.find_next("table")
         if not table:
             continue
+
         lessons = []
-        for tr in table.find_all("tr")[1:]:
+        for tr in table.find_all("tr")[1:]:  # пропускаем шапку таблицы
             cols = [td.get_text(strip=True) for td in tr.find_all("td")]
             if len(cols) >= 3:
                 lessons.append({
@@ -63,7 +66,9 @@ def parse_schedule(html):
                     "note": cols[4] if len(cols) > 4 else "",
                     "week": cols[5] if len(cols) > 5 else ""
                 })
-        schedule[day_name] = lessons
+
+        if lessons:
+            schedule[day_name] = lessons
 
     return schedule
 
@@ -77,13 +82,19 @@ def save_schedule(data, filename="schedule.json"):
 def main():
     print("📡 Получаем список групп...")
     groups = get_groups()
+
+    print(f"🔍 Ищем группу '{GROUP_NAME}'...")
     group_id = find_group_id(groups, GROUP_NAME)
     print(f"📘 Найдена группа {GROUP_NAME} (id={group_id})")
 
     print("📅 Загружаем расписание...")
     html = get_schedule(group_id)
+
+    print("🧩 Парсим HTML...")
     schedule = parse_schedule(html)
+
     save_schedule(schedule)
+    print("🎉 Готово!")
 
 if __name__ == "__main__":
     main()
