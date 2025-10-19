@@ -1,136 +1,78 @@
-import time
+import requests
+from bs4 import BeautifulSoup
 import json
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+import time
 
-URL = "https://api.nntu.ru/raspisanie"
-GROUP_NAME = "АСИ 25-1"
-OUTPUT_FILE = "schedule.json"
+BASE_URL = "https://api.nntu.ru/raspisanie"
+GROUPS_URL = "https://api.nntu.ru/getgroups"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+}
 
+def get_groups(department_id=1):
+    resp = requests.post(GROUPS_URL, data={"department_id": department_id}, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json()
 
-def setup_driver():
-    """Настройка Selenium Chrome."""
-    options = Options()
-    options.add_argument("--headless")  # Без интерфейса
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(options=options)
-    driver.set_window_size(1920, 1080)
-    return driver
-
-
-def wait_for_option_text(select_element, text, timeout=15):
-    """Ждём, пока появится нужная <option> по тексту."""
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        options = [opt.text.strip() for opt in select_element.find_elements(By.TAG_NAME, "option")]
-        if text in options:
-            return True
-        time.sleep(0.5)
-    return False
-
-
-def load_schedule(driver, group_name):
-    print("🌐 Загружаем страницу расписания...")
-    driver.get(URL)
-
-    wait = WebDriverWait(driver, 25)
-
-    # === 1️⃣ Форма обучения ===
-    print("🎓 Ждём появление списка форм обучения...")
-    dept_select = wait.until(EC.presence_of_element_located(
-        (By.ID, "studentAdvert__controls--department")
-    ))
-
-    if not wait_for_option_text(dept_select, "Очная", timeout=20):
-        raise RuntimeError("❌ Не найдена опция 'Очная' — возможно, сайт не загрузился полностью.")
-
-    Select(dept_select).select_by_visible_text("Очная")
-    print("✅ Выбрана форма обучения 'Очная'")
-    time.sleep(3)
-
-    # === 2️⃣ Группа ===
-    print(f"👥 Ждём загрузку списка групп и выбираем '{group_name}'...")
-    group_select = wait.until(EC.presence_of_element_located(
-        (By.ID, "studentAdvert__controls--groups")
-    ))
-
-    if not wait_for_option_text(group_select, group_name, timeout=20):
-        raise RuntimeError(f"❌ Группа '{group_name}' не найдена в списке!")
-
-    Select(group_select).select_by_visible_text(group_name)
-    print(f"✅ Выбрана группа '{group_name}'")
-    time.sleep(3)
-
-    # === 3️⃣ Тип расписания ===
-    print("📅 Выбираем 'Основное' расписание...")
-    type_select = wait.until(EC.presence_of_element_located(
-        (By.ID, "studentAdvert__controls--types")
-    ))
-    Select(type_select).select_by_visible_text("Основное")
-    time.sleep(2)
-
-    # === 4️⃣ Ждём таблицу ===
-    print("⏳ Ждём загрузку таблицы...")
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#printable table.raspTable")))
-    time.sleep(2)
-
-    # === 5️⃣ Парсинг таблиц ===
-    print("📖 Извлекаем данные...")
-    tables = driver.find_elements(By.CSS_SELECTOR, "#printable table.raspTable")
-
-    schedule = {
-        "group": group_name,
-        "type": "Основное",
-        "days": []
+def get_schedule_html(group_id, department_id=1):
+    data = {
+        "department_id": department_id,
+        "group_id": group_id,
+        "type": 1,
+        "date_from": "",
+        "date_to": ""
     }
+    resp = requests.post(BASE_URL, data=data, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.text
 
-    for table in tables:
-        day_name = table.find_element(By.TAG_NAME, "h3").text.strip()
-        rows = table.find_elements(By.TAG_NAME, "tr")[2:]  # Пропускаем заголовки
+def parse_schedule(html):
+    soup = BeautifulSoup(html, "html.parser")
+    schedule = {}
 
+    for day_header in soup.find_all(["h3", "h2"]):
+        day_name = day_header.get_text(strip=True)
+        table = day_header.find_next("table")
+        if not table:
+            continue
         lessons = []
-        for row in rows:
-            cols = row.find_elements(By.TAG_NAME, "td")
-            if len(cols) < 6:
-                continue
-            pair, subject, teacher, room, note, week = [c.text.strip() for c in cols]
-            lessons.append({
-                "pair": pair,
-                "subject": subject,
-                "teacher": teacher,
-                "room": room,
-                "note": note,
-                "week": week
-            })
+        for tr in table.find_all("tr")[1:]:
+            cols = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if len(cols) >= 3:
+                lessons.append({
+                    "time": cols[0],
+                    "subject": cols[1],
+                    "teacher": cols[2],
+                    "room": cols[3] if len(cols) > 3 else "",
+                    "note": cols[4] if len(cols) > 4 else "",
+                    "week": cols[5] if len(cols) > 5 else ""
+                })
+        schedule[day_name] = lessons
 
-        schedule["days"].append({
-            "day": day_name,
-            "lessons": lessons
-        })
-
-    print(f"✅ Собрано расписание на {len(schedule['days'])} дней.")
     return schedule
 
-
-def save_schedule(schedule, path):
-    """Сохраняет результат в JSON."""
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(schedule, f, ensure_ascii=False, indent=2)
-    print(f"💾 Сохранено в {path}")
-
-
 def main():
-    driver = setup_driver()
-    try:
-        schedule = load_schedule(driver, GROUP_NAME)
-        save_schedule(schedule, OUTPUT_FILE)
-    finally:
-        driver.quit()
+    print("📡 Получаем список групп...")
+    groups = get_groups()
+    all_schedules = {}
 
+    for group in groups:
+        group_name = group["name"]
+        group_id = group.get("id") or group.get("group_id")
+        print(f"📘 Загружаем {group_name} (id={group_id})")
+
+        try:
+            html = get_schedule_html(group_id)
+            schedule = parse_schedule(html)
+            all_schedules[group_name] = schedule
+            time.sleep(1.5)  # пауза, чтобы не заблокировали
+        except Exception as e:
+            print(f"⚠️ Ошибка при {group_name}: {e}")
+
+    with open("schedule.json", "w", encoding="utf-8") as f:
+        json.dump(all_schedules, f, ensure_ascii=False, indent=2)
+    print("✅ Все расписания сохранены в schedule.json")
 
 if __name__ == "__main__":
     main()
