@@ -17,10 +17,11 @@ OUTPUT_FILE = "schedule.json"
 def setup_driver():
     """Настройка Selenium Chrome."""
     options = Options()
-    options.add_argument("--headless")  # Убери для дебага: options.add_argument("--headless=new")
+    # options.add_argument("--headless")  # Убери для дебага
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")  # Fake UA
     driver = webdriver.Chrome(options=options)
     driver.set_window_size(1920, 1080)
     return driver
@@ -37,21 +38,34 @@ def wait_for_option_text(select_element, text, timeout=15):
     return False
 
 
-def select_option_by_partial_text(driver, select_element, partial_text):
-    """Выбираем опцию по частичному совпадению текста (игнорирует пробелы)."""
+def select_option_robust(driver, select_element, partial_text):
+    """Надёжный выбор опции: Select + fallback на manual click."""
+    wait = WebDriverWait(driver, 10)
+    
     try:
-        # Debug: выводим все опции с repr для скрытых символов
-        print(f"🔍 Доступные опции в селекте '{select_element.get_attribute('id')}':")
-        for opt in select_element.find_elements(By.TAG_NAME, "option"):
-            print(f"  - repr: {repr(opt.text)} | stripped: '{opt.text.strip()}'")
-        
-        # Ищем опцию по XPath (contains игнорирует лишнее)
-        option = select_element.find_element(By.XPATH, f".//option[contains(text(), '{partial_text}')]")
-        ActionChains(driver).move_to_element(option).click(option).perform()
-        print(f"✅ Выбрана опция, содержащая '{partial_text}'")
+        # Сначала пробуем Select (стандартно)
+        Select(select_element).select_by_visible_text(partial_text)
+        print(f"✅ Выбрано через Select: '{partial_text}'")
         return True
     except NoSuchElementException:
-        print(f"❌ Не удалось выбрать опцию с текстом '{partial_text}'")
+        print(f"⚠️ Select фейлил для '{partial_text}', пробуем manual...")
+        
+        # Fallback: клик на select (открыть дропдаун)
+        select_element.click()
+        time.sleep(1)  # Ждём анимацию
+        
+        # Ждём и кликаем опцию
+        option_locator = (By.XPATH, f".//option[contains(text(), '{partial_text}')]")
+        option = wait.until(EC.element_to_be_clickable(option_locator))
+        ActionChains(driver).move_to_element(option).click(option).perform()
+        print(f"✅ Выбрано manual: '{partial_text}'")
+        return True
+    except Exception as e:
+        print(f"❌ Fallback фейлил: {e}")
+        # Debug опций при ошибке
+        print(f"🔍 Опции в селекте '{select_element.get_attribute('id')}':")
+        for opt in select_element.find_elements(By.TAG_NAME, "option"):
+            print(f"  - '{opt.text.strip()}' (value: {opt.get_attribute('value')})")
         return False
 
 
@@ -62,56 +76,43 @@ def load_schedule(driver, group_name):
     wait = WebDriverWait(driver, 25)
 
     # === 1️⃣ Форма обучения ===
-    print("🎓 Ждём появление списка форм обучения...")
-    dept_select = wait.until(EC.element_to_be_clickable(  # Изменили на clickable
-        (By.ID, "studentAdvert__controls--department")
-    ))
+    print("🎓 Ждём список форм обучения...")
+    dept_select = wait.until(EC.element_to_be_clickable((By.ID, "studentAdvert__controls--department")))
 
     if not wait_for_option_text(dept_select, "Очная", timeout=20):
-        raise RuntimeError("❌ Не найдена опция 'Очная' — возможно, сайт не загрузился полностью.")
+        raise RuntimeError("❌ Не найдена опция 'Очная'")
 
-    # Manual select с debug
-    if not select_option_by_partial_text(driver, dept_select, "Очная"):
-        raise RuntimeError("❌ Не удалось кликнуть на 'Очная' — проверь debug-вывод!")
+    if not select_option_robust(driver, dept_select, "Очная"):
+        raise RuntimeError("❌ Не удалось выбрать 'Очная'")
     
-    print("✅ Выбрана форма обучения 'Очная'")
-    time.sleep(random.uniform(2, 4))  # Random delay
+    time.sleep(random.uniform(2, 4))
 
     # === 2️⃣ Группа ===
-    print(f"👥 Ждём загрузку списка групп и выбираем '{group_name}'...")
-    group_select = wait.until(EC.element_to_be_clickable(  # Clickable
-        (By.ID, "studentAdvert__controls--groups")
-    ))
+    print(f"👥 Ждём список групп и выбираем '{group_name}'...")
+    group_select = wait.until(EC.element_to_be_clickable((By.ID, "studentAdvert__controls--groups")))
 
     if not wait_for_option_text(group_select, group_name, timeout=20):
-        raise RuntimeError(f"❌ Группа '{group_name}' не найдена в списке!")
+        raise RuntimeError(f"❌ Группа '{group_name}' не найдена")
 
-    # Manual select для групп тоже (на всякий)
-    if not select_option_by_partial_text(driver, group_select, group_name):
-        raise RuntimeError(f"❌ Не удалось кликнуть на группу '{group_name}'")
+    if not select_option_robust(driver, group_select, group_name):
+        raise RuntimeError(f"❌ Не удалось выбрать '{group_name}'")
     
-    print(f"✅ Выбрана группа '{group_name}'")
     time.sleep(random.uniform(2, 4))
 
     # === 3️⃣ Тип расписания ===
-    print("📅 Выбираем 'Основное' расписание...")
-    type_select = wait.until(EC.element_to_be_clickable(
-        (By.ID, "studentAdvert__controls--types")
-    ))
-    # Для типов используем Select, но с fallback
-    try:
-        Select(type_select).select_by_visible_text("Основное")
-    except NoSuchElementException:
-        if not select_option_by_partial_text(driver, type_select, "Основное"):
-            raise RuntimeError("❌ Не удалось выбрать 'Основное'")
+    print("📅 Выбираем 'Основное'...")
+    type_select = wait.until(EC.element_to_be_clickable((By.ID, "studentAdvert__controls--types")))
+    if not select_option_robust(driver, type_select, "Основное"):
+        raise RuntimeError("❌ Не удалось выбрать 'Основное'")
+    
     time.sleep(random.uniform(1, 3))
 
     # === 4️⃣ Ждём таблицу ===
-    print("⏳ Ждём загрузку таблицы...")
+    print("⏳ Ждём таблицу...")
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#printable table.raspTable")))
     time.sleep(random.uniform(1, 2))
 
-    # === 5️⃣ Парсинг таблиц ===
+    # === 5️⃣ Парсинг ===
     print("📖 Извлекаем данные...")
     tables = driver.find_elements(By.CSS_SELECTOR, "#printable table.raspTable")
 
@@ -123,7 +124,7 @@ def load_schedule(driver, group_name):
 
     for table in tables:
         day_name = table.find_element(By.TAG_NAME, "h3").text.strip()
-        rows = table.find_elements(By.TAG_NAME, "tr")[2:]  # Пропускаем заголовки
+        rows = table.find_elements(By.TAG_NAME, "tr")[2:]
 
         lessons = []
         for row in rows:
@@ -145,12 +146,12 @@ def load_schedule(driver, group_name):
             "lessons": lessons
         })
 
-    print(f"✅ Собрано расписание на {len(schedule['days'])} дней.")
+    print(f"✅ Собрано {len(schedule['days'])} дней.")
     return schedule
 
 
 def save_schedule(schedule, path):
-    """Сохраняет результат в JSON."""
+    """Сохраняет в JSON."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(schedule, f, ensure_ascii=False, indent=2)
     print(f"💾 Сохранено в {path}")
@@ -161,8 +162,8 @@ def main():
     try:
         schedule = load_schedule(driver, GROUP_NAME)
         save_schedule(schedule, OUTPUT_FILE)
-    except (TimeoutException, NoSuchElementException) as e:
-        print(f"⚠️ Selenium-ошибка: {e}")
+    except Exception as e:
+        print(f"⚠️ Ошибка: {e}")
     finally:
         driver.quit()
 
