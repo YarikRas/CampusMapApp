@@ -30,16 +30,18 @@ def find_group_id(groups, group_name):
 
 # === 3. Получаем HTML расписания ===
 def get_schedule(group_id):
-    url = f"{API_BASE}/getschedule"
+    url = f"{API_BASE}/raspisanie"
     data = {
         "department_id": DEPARTMENT_ID,
         "group_id": group_id,
         "type": 1,
-        "date_from": None,
-        "date_to": None
+        "date_from": "",
+        "date_to": ""
     }
+    print(f"📤 POST {url} — {data}")
     resp = requests.post(url, data=data, headers=HEADERS)
     resp.raise_for_status()
+    print(f"📥 Status: {resp.status_code}, Length: {len(resp.text)}")
     return resp.text
 
 # === 4. Парсим HTML в JSON ===
