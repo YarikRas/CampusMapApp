@@ -1,8 +1,8 @@
-name: 🕒 Update Schedule (every 30 min)
+name: 🕒 Update Schedule (every 60 min)
 
 on:
   schedule:
-    - cron: "0 * * * *"   # каждые 30 минут
+    - cron: "0 * * * *"   # каждые 60 минут
   workflow_dispatch:          # возможность вручную запустить
 
 jobs:
