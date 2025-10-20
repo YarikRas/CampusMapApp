@@ -12,7 +12,7 @@ OUTPUT_FILE = "schedule.json"
 
 def setup_driver():
     options = Options()
-    options.add_argument("--headless")
+    #options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     # если используешь webdriver-manager, можно его сюда подключить; в Actions chromedriver уже должен быть в PATH
