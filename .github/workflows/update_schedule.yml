@@ -1,0 +1,68 @@
+name: 🕒 Update Schedule (every 60 min)
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # каждые 60 минут
+  workflow_dispatch:          # возможность вручную запустить
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ⚙️ Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium
+
+      - name: 🧩 Install Chrome and Chromedriver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable wget unzip jq
+          
+          # Получаем версию Chrome
+          CHROME_VERSION=$(google-chrome --version | cut -d ' ' -f3)
+          CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d '.' -f1)
+          echo "Detected Chrome: $CHROME_VERSION (major: $CHROME_MAJOR)"
+          
+          # Качаем JSON с known-good-versions
+          curl -s https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json > versions.json
+          
+          # Находим последнюю версию chromedriver для major (убрали channels, так как его нет)
+          CHROMEDRIVER_VERSION=$(jq -r --arg major "$CHROME_MAJOR" '.versions[] | select(.version | startswith($major + ".")) | .version' versions.json | tail -1)
+          if [ -z "$CHROMEDRIVER_VERSION" ]; then
+            echo "❌ No matching chromedriver for major $CHROME_MAJOR"
+            exit 1
+          fi
+          echo "Selected Chromedriver: $CHROMEDRIVER_VERSION"
+          
+          # Скачиваем и устанавливаем
+          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip"
+          unzip -q chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+          rm -rf chromedriver-linux64* versions.json
+          
+          # Проверяем версии (должны совпадать по major)
+          chromedriver --version
+          google-chrome --version
+
+      - name: 🧠 Run schedule parser
+        run: python parse_all_schedules.py
+
+      - name: 💾 Commit & Push results
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git pull --rebase origin main || true
+          git add schedule.json
+          git commit -m "🔄 Update schedule.json (auto)" || echo "No changes"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} main
